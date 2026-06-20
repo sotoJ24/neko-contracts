@@ -179,8 +179,8 @@ impl AquariusAdapter {
     ///
     /// pool.claim() is permissionless on-chain; guarded here to vault-only to keep
     /// reward accounting consistent with the vault's harvest_all() flow.
-    /// Returns the AQUA amount harvested (0 if no rewards have accrued).
-    pub fn a_harvest(env: Env, to: Address) -> i128 {
+    /// Returns the reward token address and amount harvested.
+    pub fn a_harvest(env: Env, to: Address) -> (Address, i128) {
         let storage = Storage::load(&env);
         // Only the configured vault can trigger harvests.
         storage.vault.require_auth();
@@ -192,6 +192,6 @@ impl AquariusAdapter {
             Events::harvested(&env, &adapter_addr, &storage.aqua_token, aqua_harvested);
         }
 
-        aqua_harvested
+        (storage.aqua_token.clone(), aqua_harvested)
     }
 }

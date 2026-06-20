@@ -111,7 +111,8 @@ impl SoroswapAdapter {
 
     /// No explicit harvest — Soroswap fees accrue into the pair reserves and are
     /// realized automatically when liquidity is removed.
-    pub fn a_harvest(_env: Env, _to: Address) -> i128 {
-        0
+    pub fn a_harvest(env: Env, _to: Address) -> (Address, i128) {
+        let storage = Storage::load(&env);
+        (storage.token_a, 0)
     }
 }

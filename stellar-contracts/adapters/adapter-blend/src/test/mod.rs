@@ -357,3 +357,28 @@ fn test_adapter_apy_returns_zero() {
 
     assert_eq!(adapter.a_get_apy(), 0u32);
 }
+
+#[test]
+fn test_adapter_harvest() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let vault = Address::generate(&env);
+    let (deposit_token, _) = create_token(&env, &admin);
+
+    let fixture = create_blend_fixture(&env, &admin, &deposit_token.address);
+
+    let adapter = create_adapter(
+        &env,
+        &admin,
+        &vault,
+        &fixture.pool_addr,
+        &deposit_token.address,
+        &fixture.blnd_token.address,
+    );
+
+    let (reward_token, amount) = adapter.a_harvest(&vault);
+    assert_eq!(reward_token, fixture.blnd_token.address);
+    assert_eq!(amount, 0i128);
+}

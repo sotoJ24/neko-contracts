@@ -267,5 +267,7 @@ fn test_adapter_harvest_returns_zero() {
         &fixture.token_b.address,
     );
 
-    assert_eq!(adapter.a_harvest(&vault), 0i128);
+    let (reward_token, amount) = adapter.a_harvest(&vault);
+    assert_eq!(reward_token, fixture.token_a.address);
+    assert_eq!(amount, 0i128);
 }

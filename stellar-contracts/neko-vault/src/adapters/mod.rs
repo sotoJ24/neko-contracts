@@ -24,6 +24,6 @@ pub trait IAdapter {
     fn a_get_apy(env: Env) -> u32;
 
     /// Harvest accumulated rewards and send them to `to` (vault).
-    /// Returns the amount harvested (0 if yield is embedded in position rate).
-    fn a_harvest(env: Env, to: Address) -> i128;
+    /// Returns the reward token address and the amount harvested.
+    fn a_harvest(env: Env, to: Address) -> (Address, i128);
 }

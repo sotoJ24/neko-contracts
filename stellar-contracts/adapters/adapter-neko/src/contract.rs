@@ -168,8 +168,9 @@ impl NekoAdapter {
     }
 
     /// No explicit harvest — yield is embedded in the b_rate appreciation.
-    pub fn a_harvest(_env: Env, _to: Address) -> i128 {
-        0
+    pub fn a_harvest(env: Env, _to: Address) -> (Address, i128) {
+        let storage = Storage::load(&env);
+        (storage.deposit_token, 0)
     }
 
     // ========== Helpers ==========

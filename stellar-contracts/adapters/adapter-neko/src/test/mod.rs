@@ -207,6 +207,7 @@ fn test_adapter_apy_and_harvest() {
     // APY is 0 for now (placeholder)
     assert_eq!(adapter.a_get_apy(), 0u32);
 
-    // Harvest returns 0 (yield embedded in b_rate)
-    assert_eq!(adapter.a_harvest(&vault), 0i128);
+    let (reward_token, amount) = adapter.a_harvest(&vault);
+    assert_eq!(reward_token, token.address);
+    assert_eq!(amount, 0i128);
 }

@@ -101,25 +101,23 @@ impl BlendAdapter {
         0
     }
 
-    /// Claim BLND emissions from the pool and forward them to `to` (the vault).
+    /// Claim BLND emissions from the pool directly to `to` (the vault).
     ///
     /// Blend emits BLND tokens as liquidity mining rewards. This function:
-    ///   1. Claims BLND to the adapter via pool.claim()
-    ///   2. Transfers the BLND to the vault (`to`)
-    ///   3. Returns the BLND amount harvested
+    ///   1. Claims BLND directly to the vault via pool.claim()
+    ///   2. Returns the reward token address and amount harvested
     ///
-    /// The vault's neko-vault#harvest_all() accumulates this in liquid_reserve.
-    /// Swapping BLND → deposit_token is left to the vault manager.
-    pub fn a_harvest(env: Env, to: Address) -> i128 {
+    /// The vault's neko-vault#harvest_all() accumulates this or swaps it.
+    pub fn a_harvest(env: Env, to: Address) -> (Address, i128) {
         let storage = Storage::load(&env);
         let adapter_addr = env.current_contract_address();
 
-        let blnd_harvested = blend_pool::claim(&env, &to, &storage);
+        let (reward_token, blnd_harvested) = blend_pool::claim(&env, &to, &storage);
 
         if blnd_harvested > 0 {
             Events::harvested(&env, &adapter_addr, &storage.blend_token, blnd_harvested);
         }
 
-        blnd_harvested
+        (reward_token, blnd_harvested)
     }
 }

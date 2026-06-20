@@ -4,7 +4,7 @@ use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::events::Events;
 use crate::common::storage::{AllowanceStorage, BalanceStorage, Storage};
-use crate::common::types::{ProtocolAllocation, RiskTier, VaultConfig, VaultStatus};
+use crate::common::types::{ProtocolAllocation, RiskTier, VaultConfig, VaultStatus, HarvestConfig};
 use crate::strategies::harvester::Harvester;
 use crate::strategies::optimizer::Optimizer;
 use crate::strategies::rebalancer::Rebalancer;
@@ -65,6 +65,16 @@ impl VaultContract {
 
     pub fn set_manager(env: Env, manager: Address) {
         Admin::set_manager(&env, &manager);
+    }
+
+    pub fn set_harvest_config(env: Env, config: HarvestConfig) {
+        Admin::require_admin(&env);
+        Storage::set_harvest_config(&env, &config);
+    }
+
+    pub fn get_harvest_config(env: Env) -> Option<HarvestConfig> {
+        Admin::require_admin(&env);
+        Storage::get_harvest_config(&env)
     }
 
     // ========== Protocol management ==========

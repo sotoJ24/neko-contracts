@@ -6,7 +6,7 @@ use soroban_sdk::{
     token::{StellarAssetClient, TokenClient},
 };
 
-use crate::common::types::{RiskTier, VaultConfig, VaultStatus};
+use crate::common::types::{RiskTier, VaultConfig, VaultStatus, HarvestConfig};
 use crate::{VaultContract, VaultContractClient};
 
 // ============================================================================
@@ -74,8 +74,34 @@ impl MockAdapter {
         500 // 5% in BPS
     }
 
-    pub fn a_harvest(_env: Env, _to: Address) -> i128 {
-        0 // No explicit harvest; yield embedded in b_rate
+    pub fn a_harvest(env: Env, to: Address) -> (Address, i128) {
+        let reward_token: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("H_TOK"))
+            .unwrap_or_else(|| {
+                env.storage()
+                    .instance()
+                    .get(&symbol_short!("TOKEN"))
+                    .unwrap()
+            });
+        let reward_amount: i128 = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("H_AMT"))
+            .unwrap_or(0);
+
+        if reward_amount > 0 {
+            let token = TokenClient::new(&env, &reward_token);
+            token.transfer(&env.current_contract_address(), &to, &reward_amount);
+        }
+
+        (reward_token, reward_amount)
+    }
+
+    pub fn set_mock_harvest(env: Env, token: Address, amount: i128) {
+        env.storage().instance().set(&symbol_short!("H_TOK"), &token);
+        env.storage().instance().set(&symbol_short!("H_AMT"), &amount);
     }
 }
 
@@ -380,4 +406,234 @@ fn test_decimals_name_symbol() {
     assert_eq!(vault.decimals(), 7u32);
     assert_eq!(vault.name(), String::from_str(&env, "Neko CETES Vault"));
     assert_eq!(vault.symbol(), String::from_str(&env, "vCETES"));
+}
+
+// ============================================================================
+// Mock Router Contract
+// ============================================================================
+
+#[contract]
+struct MockRouter;
+
+#[contractimpl]
+impl MockRouter {
+    pub fn router_pair_for(env: Env, _token_a: Address, _token_b: Address) -> Address {
+        let key = symbol_short!("PAIR");
+        env.storage().instance().get(&key).unwrap_or_else(|| {
+            Address::generate(&env)
+        })
+    }
+
+    pub fn set_pair(env: Env, pair: Address) {
+        env.storage().instance().set(&symbol_short!("PAIR"), &pair);
+    }
+
+    pub fn router_get_amounts_out(env: Env, amount_in: i128, _path: soroban_sdk::Vec<soroban_sdk::Address>) -> soroban_sdk::Vec<i128> {
+        let rate = env.storage().instance().get(&symbol_short!("E_RATE"))
+            .unwrap_or_else(|| env.storage().instance().get(&symbol_short!("RATE")).unwrap_or(100i128));
+        let amount_out = amount_in * rate / 100;
+        soroban_sdk::vec![&env, amount_in, amount_out]
+    }
+
+    pub fn set_rate(env: Env, rate: i128) {
+        env.storage().instance().set(&symbol_short!("RATE"), &rate);
+    }
+
+    pub fn set_rates(env: Env, estimate_rate: i128, swap_rate: i128) {
+        env.storage().instance().set(&symbol_short!("E_RATE"), &estimate_rate);
+        env.storage().instance().set(&symbol_short!("S_RATE"), &swap_rate);
+    }
+
+    pub fn swap_exact_tokens_for_tokens(
+        env: Env,
+        amount_in: i128,
+        amount_out_min: i128,
+        path: soroban_sdk::Vec<soroban_sdk::Address>,
+        to: Address,
+        _deadline: u64,
+    ) -> soroban_sdk::Vec<i128> {
+        let token_in_addr = path.get(0).unwrap();
+        let token_out_addr = path.get(1).unwrap();
+        
+        let rate = env.storage().instance().get(&symbol_short!("S_RATE"))
+            .unwrap_or_else(|| env.storage().instance().get(&symbol_short!("RATE")).unwrap_or(100i128));
+        let amount_out = amount_in * rate / 100;
+        
+        if amount_out < amount_out_min {
+            soroban_sdk::panic_with_error!(&env, crate::common::error::Error::ArithmeticError);
+        }
+
+        let pair = Self::router_pair_for(env.clone(), token_in_addr.clone(), token_out_addr.clone());
+        let token_in = TokenClient::new(&env, &token_in_addr);
+        token_in.transfer(&to, &pair, &amount_in);
+
+        let token_out = TokenClient::new(&env, &token_out_addr);
+        token_out.transfer(&env.current_contract_address(), &to, &amount_out);
+
+        soroban_sdk::vec![&env, amount_in, amount_out]
+    }
+}
+
+// ============================================================================
+// Harvest Swap Path Tests
+// ============================================================================
+
+#[test]
+fn test_harvest_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token, _) = create_token(&env, &admin);
+    let vault = create_vault(&env, &admin, &token.address);
+
+    let adapter_id = env.register(MockAdapter, ());
+    MockAdapterClient::new(&env, &adapter_id).initialize(&token.address, &vault.address);
+    vault.add_protocol(&symbol_short!("MOCK"), &adapter_id, &10000u32, &RiskTier::Low);
+
+    let harvested = vault.harvest_all();
+    assert_eq!(harvested, 0);
+    assert_eq!(vault.get_liquid_reserve(), 0);
+}
+
+#[test]
+fn test_harvest_same_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token, token_admin) = create_token(&env, &admin);
+    let vault = create_vault(&env, &admin, &token.address);
+
+    let adapter_id = env.register(MockAdapter, ());
+    let adapter = MockAdapterClient::new(&env, &adapter_id);
+    adapter.initialize(&token.address, &vault.address);
+    vault.add_protocol(&symbol_short!("MOCK"), &adapter_id, &10000u32, &RiskTier::Low);
+
+    let reward_amount = 50_0000000i128;
+    token_admin.mint(&adapter_id, &reward_amount);
+    adapter.set_mock_harvest(&token.address, &reward_amount);
+
+    let harvested = vault.harvest_all();
+    assert_eq!(harvested, reward_amount);
+    assert_eq!(vault.get_liquid_reserve(), reward_amount);
+}
+
+#[test]
+fn test_harvest_swap_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (deposit_token, deposit_admin) = create_token(&env, &admin);
+    let (reward_token, reward_admin) = create_token(&env, &admin);
+    let vault = create_vault(&env, &admin, &deposit_token.address);
+
+    let adapter_id = env.register(MockAdapter, ());
+    let adapter = MockAdapterClient::new(&env, &adapter_id);
+    adapter.initialize(&deposit_token.address, &vault.address);
+    vault.add_protocol(&symbol_short!("MOCK"), &adapter_id, &10000u32, &RiskTier::Low);
+
+    let router_id = env.register(MockRouter, ());
+    let router = MockRouterClient::new(&env, &router_id);
+    let pair = Address::generate(&env);
+    router.set_pair(&pair);
+    router.set_rate(&90);
+
+    deposit_admin.mint(&router_id, &1000_0000000i128);
+
+    let config = HarvestConfig {
+        reward_token: reward_token.address.clone(),
+        swap_router: router_id.clone(),
+        min_swap_amount: 10_0000000i128,
+        max_slippage_bps: 1000,
+    };
+    vault.set_harvest_config(&config);
+
+    let reward_amount = 100_0000000i128;
+    reward_admin.mint(&adapter_id, &reward_amount);
+    adapter.set_mock_harvest(&reward_token.address, &reward_amount);
+
+    let harvested = vault.harvest_all();
+    assert_eq!(harvested, 90_0000000i128);
+    assert_eq!(vault.get_liquid_reserve(), 90_0000000i128);
+}
+
+#[test]
+fn test_harvest_swap_dust_skipped() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (deposit_token, _) = create_token(&env, &admin);
+    let (reward_token, reward_admin) = create_token(&env, &admin);
+    let vault = create_vault(&env, &admin, &deposit_token.address);
+
+    let adapter_id = env.register(MockAdapter, ());
+    let adapter = MockAdapterClient::new(&env, &adapter_id);
+    adapter.initialize(&deposit_token.address, &vault.address);
+    vault.add_protocol(&symbol_short!("MOCK"), &adapter_id, &10000u32, &RiskTier::Low);
+
+    let router_id = env.register(MockRouter, ());
+    let router = MockRouterClient::new(&env, &router_id);
+    let pair = Address::generate(&env);
+    router.set_pair(&pair);
+
+    let config = HarvestConfig {
+        reward_token: reward_token.address.clone(),
+        swap_router: router_id.clone(),
+        min_swap_amount: 10_0000000i128,
+        max_slippage_bps: 1000,
+    };
+    vault.set_harvest_config(&config);
+
+    let reward_amount = 5_0000000i128;
+    reward_admin.mint(&adapter_id, &reward_amount);
+    adapter.set_mock_harvest(&reward_token.address, &reward_amount);
+
+    let harvested = vault.harvest_all();
+    assert_eq!(harvested, 0);
+    assert_eq!(vault.get_liquid_reserve(), 0);
+
+    assert_eq!(reward_token.balance(&vault.address), reward_amount);
+}
+
+#[test]
+fn test_harvest_swap_slippage_rejection() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (deposit_token, deposit_admin) = create_token(&env, &admin);
+    let (reward_token, reward_admin) = create_token(&env, &admin);
+    let vault = create_vault(&env, &admin, &deposit_token.address);
+
+    let adapter_id = env.register(MockAdapter, ());
+    let adapter = MockAdapterClient::new(&env, &adapter_id);
+    adapter.initialize(&deposit_token.address, &vault.address);
+    vault.add_protocol(&symbol_short!("MOCK"), &adapter_id, &10000u32, &RiskTier::Low);
+
+    let router_id = env.register(MockRouter, ());
+    let router = MockRouterClient::new(&env, &router_id);
+    let pair = Address::generate(&env);
+    router.set_pair(&pair);
+    router.set_rates(&100, &80);
+
+    deposit_admin.mint(&router_id, &1000_0000000i128);
+
+    let config = HarvestConfig {
+        reward_token: reward_token.address.clone(),
+        swap_router: router_id.clone(),
+        min_swap_amount: 10_0000000i128,
+        max_slippage_bps: 500,
+    };
+    vault.set_harvest_config(&config);
+
+    let reward_amount = 100_0000000i128;
+    reward_admin.mint(&adapter_id, &reward_amount);
+    adapter.set_mock_harvest(&reward_token.address, &reward_amount);
+
+    let harvested = vault.harvest_all();
+    assert_eq!(harvested, 0);
+    assert_eq!(vault.get_liquid_reserve(), 0);
 }

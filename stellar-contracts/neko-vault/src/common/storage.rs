@@ -1,8 +1,8 @@
-use soroban_sdk::{Address, Env, panic_with_error};
+use soroban_sdk::{Address, Env, panic_with_error, symbol_short};
 
 use crate::common::error::Error;
 use crate::common::types::{
-    DataKey, INSTANCE_BUMP, INSTANCE_TTL, STORAGE_KEY, Txn, VaultAllowance, VaultStorage,
+    DataKey, INSTANCE_BUMP, INSTANCE_TTL, STORAGE_KEY, Txn, VaultAllowance, VaultStorage, HarvestConfig,
 };
 
 // ============================================================================
@@ -28,6 +28,21 @@ impl Storage {
 
     pub fn is_initialized(env: &Env) -> bool {
         env.storage().instance().has(&STORAGE_KEY)
+    }
+
+    pub fn get_harvest_config(env: &Env) -> Option<HarvestConfig> {
+        env.storage()
+            .instance()
+            .get(&symbol_short!("H_CONF"))
+    }
+
+    pub fn set_harvest_config(env: &Env, config: &HarvestConfig) {
+        env.storage()
+            .instance()
+            .set(&symbol_short!("H_CONF"), config);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL, INSTANCE_BUMP);
     }
 }
 

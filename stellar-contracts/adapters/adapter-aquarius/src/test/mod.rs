@@ -525,8 +525,9 @@ fn test_harvest_returns_zero_when_no_rewards() {
         .mint(&adapter.address, &amount);
     adapter.a_deposit(&amount, &vault);
 
-    // Mock pool always returns 0 rewards — a_harvest should return 0
-    let harvested = adapter.a_harvest(&vault);
+    // Mock pool always returns 0 rewards — a_harvest should return (aqua_token, 0)
+    let (reward_token, harvested) = adapter.a_harvest(&vault);
+    assert_eq!(reward_token, fixture.aqua_token.address);
     assert_eq!(harvested, 0i128);
 }
 

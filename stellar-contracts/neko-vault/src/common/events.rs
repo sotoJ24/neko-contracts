@@ -39,6 +39,13 @@ pub struct ProtocolRemovedEvent {
     pub id: Symbol,
 }
 
+#[contractevent]
+pub struct DustAccumulatedEvent {
+    pub adapter: Address,
+    pub token: Address,
+    pub amount: i128,
+}
+
 // ============================================================================
 // SEP-41 token events (matching neko-token pattern)
 // ============================================================================
@@ -112,6 +119,15 @@ impl Events {
 
     pub fn protocol_removed(env: &Env, id: &Symbol) {
         ProtocolRemovedEvent { id: id.clone() }.publish(env);
+    }
+
+    pub fn dust_accumulated(env: &Env, adapter: &Address, token: &Address, amount: i128) {
+        DustAccumulatedEvent {
+            adapter: adapter.clone(),
+            token: token.clone(),
+            amount,
+        }
+        .publish(env);
     }
 
     pub fn transfer(env: &Env, from: &Address, to: &Address, amount: i128) {

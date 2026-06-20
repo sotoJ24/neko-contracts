@@ -60,6 +60,15 @@ pub struct VaultConfig {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HarvestConfig {
+    pub reward_token: Address,
+    pub swap_router: Address,
+    pub min_swap_amount: i128,
+    pub max_slippage_bps: u32,
+}
+
+#[contracttype]
 #[derive(Clone, Debug)]
 pub struct ProtocolAllocation {
     /// Adapter contract address

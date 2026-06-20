@@ -1,6 +1,5 @@
 use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    token::TokenClient,
     vec, Address, Env, IntoVal,
 };
 
@@ -108,21 +107,15 @@ pub fn withdraw(env: &Env, amount: i128, to: &Address, storage: &AdapterStorage)
     actual_amount
 }
 
-/// Claim BLND emissions from the pool, transfer them to `to`, and return the amount claimed.
-pub fn claim(env: &Env, to: &Address, storage: &AdapterStorage) -> i128 {
+/// Claim BLND emissions from the pool directly to `to` (the vault), and return the token address and amount claimed.
+pub fn claim(env: &Env, to: &Address, storage: &AdapterStorage) -> (Address, i128) {
     let adapter_addr = env.current_contract_address();
     let pool = blend::PoolClient::new(env, &storage.blend_pool);
 
-    // Claim BLND emissions to the adapter first
-    let blnd_claimed = pool.claim(&adapter_addr, &storage.claim_ids, &adapter_addr);
+    // Claim BLND emissions directly to the vault (to)
+    let blnd_claimed = pool.claim(&adapter_addr, &storage.claim_ids, to);
 
-    if blnd_claimed > 0 {
-        // Forward BLND to vault (to)
-        let blnd_token = TokenClient::new(env, &storage.blend_token);
-        blnd_token.transfer(&adapter_addr, to, &blnd_claimed);
-    }
-
-    blnd_claimed
+    (storage.blend_token.clone(), blnd_claimed)
 }
 
 /// Returns the adapter's current position value in deposit_token units.
