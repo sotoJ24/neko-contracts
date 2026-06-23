@@ -1,10 +1,11 @@
 use soroban_sdk::{contracttype, Env};
 
-use crate::common::types::AdapterStorage;
+use crate::common::types::{AdapterStorage, SlippageConfig};
 
 #[contracttype]
 enum DataKey {
     Storage,
+    SlippageCfg,
 }
 
 pub struct Storage;
@@ -27,5 +28,19 @@ impl Storage {
             .instance()
             .get(&DataKey::Storage)
             .unwrap_or_else(|| panic!())
+    }
+
+    /// Persist slippage config. Falls back to `SlippageConfig::default()` when
+    /// never set, so the adapter is always safe even before an admin call.
+    pub fn save_slippage(env: &Env, config: &SlippageConfig) {
+        env.storage().instance().set(&DataKey::SlippageCfg, config);
+        env.storage().instance().extend_ttl(518_400, 518_400);
+    }
+
+    pub fn load_slippage(env: &Env) -> SlippageConfig {
+        env.storage()
+            .instance()
+            .get(&DataKey::SlippageCfg)
+            .unwrap_or_else(|| SlippageConfig::default())
     }
 }
